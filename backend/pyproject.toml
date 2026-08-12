@@ -35,6 +35,13 @@ dev = [
     "ruff==0.16.2",
 ]
 
+[tool.fastapi]
+entrypoint = "app.main:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
 [tool.ruff]
 target-version = "py314"
 
