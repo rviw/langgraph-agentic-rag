@@ -1,0 +1,11 @@
+{
+  "name": "langgraph-agentic-rag",
+  "private": true,
+  "scripts": {
+    "backend:lint": "cd backend && uv run ruff check --fix .",
+    "backend:format": "cd backend && uv run ruff format ."
+  },
+  "devDependencies": {
+    "supabase": "2.114.0"
+  }
+}
