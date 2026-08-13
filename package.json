@@ -2,6 +2,8 @@
   "name": "langgraph-agentic-rag",
   "private": true,
   "scripts": {
+    "db:bootstrap": "bash scripts/db-bootstrap.sh",
+    "backend:start": "bash scripts/run-backend.sh",
     "backend:lint": "cd backend && uv run ruff check --fix .",
     "backend:format": "cd backend && uv run ruff format .",
     "backend:test": "cd backend && uv run pytest --ignore=tests/integration"
