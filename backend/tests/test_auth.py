@@ -1,31 +1,36 @@
-from uuid import UUID
+from uuid import UUID, uuid7
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.deps import CurrentUserDep, get_supabase_auth
-from tests.conftest import FakeSupabase, authenticated_claims
+from tests.conftest import FakeSupabaseAuthClient, authenticated_claims
 
 
 @pytest.fixture
-def client(supabase: FakeSupabase) -> TestClient:
+def user_id() -> UUID:
+    return uuid7()
+
+
+@pytest.fixture
+def client(supabase_auth: FakeSupabaseAuthClient) -> TestClient:
     app = FastAPI()
 
     @app.get("/whoami")
     def whoami(current_user: CurrentUserDep) -> dict[str, str]:
         return {"id": str(current_user.id), "email": current_user.email}
 
-    app.dependency_overrides[get_supabase_auth] = lambda: supabase
+    app.dependency_overrides[get_supabase_auth] = lambda: supabase_auth
     return TestClient(app)
 
 
 def test_a_verified_end_user_token_identifies_the_caller(
     client: TestClient,
-    supabase: FakeSupabase,
+    supabase_auth: FakeSupabaseAuthClient,
     user_id: UUID,
 ) -> None:
-    supabase.auth.register(
+    supabase_auth.auth.register(
         "valid",
         authenticated_claims(user_id, email="member@example.test"),
     )
@@ -41,10 +46,10 @@ def test_a_verified_end_user_token_identifies_the_caller(
 
 def test_an_audience_list_containing_authenticated_is_accepted(
     client: TestClient,
-    supabase: FakeSupabase,
+    supabase_auth: FakeSupabaseAuthClient,
     user_id: UUID,
 ) -> None:
-    supabase.auth.register(
+    supabase_auth.auth.register(
         "list-audience",
         authenticated_claims(user_id, aud=["authenticated", "other"]),
     )
@@ -69,11 +74,11 @@ def test_an_audience_list_containing_authenticated_is_accepted(
 )
 def test_a_token_that_is_not_an_end_user_session_is_rejected(
     client: TestClient,
-    supabase: FakeSupabase,
+    supabase_auth: FakeSupabaseAuthClient,
     user_id: UUID,
     overrides: dict[str, object],
 ) -> None:
-    supabase.auth.register(
+    supabase_auth.auth.register(
         "unsupported",
         authenticated_claims(user_id, **overrides),
     )

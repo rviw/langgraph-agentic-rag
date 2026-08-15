@@ -5,11 +5,12 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlmodel import Session
+from sqlmodel import Session, select
 from supabase import Client
 from supabase_auth.errors import AuthError
 
 from app.core.db import engine
+from app.models import Chat
 
 _JWT_AUDIENCE = "authenticated"
 _bearer = HTTPBearer()
@@ -87,3 +88,27 @@ def get_current_user(
 
 
 CurrentUserDep = Annotated[CurrentUser, Depends(get_current_user)]
+
+
+def get_owned_chat(
+    chat_id: UUID,
+    db_session: DbSessionDep,
+    current_user: CurrentUserDep,
+) -> Chat:
+    """Load a chat the caller owns, hiding other users' chats as missing."""
+
+    chat = db_session.exec(
+        select(Chat).where(
+            Chat.id == chat_id,
+            Chat.user_id == current_user.id,
+        )
+    ).one_or_none()
+    if chat is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This chat is no longer available.",
+        )
+    return chat
+
+
+OwnedChatDep = Annotated[Chat, Depends(get_owned_chat)]

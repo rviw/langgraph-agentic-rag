@@ -1,8 +1,27 @@
+from collections.abc import Iterator
 from typing import Any
 from uuid import UUID, uuid7
 
 import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import text
+from sqlmodel import Session
 from supabase_auth.errors import AuthApiError
+
+from app.api.deps import get_db, get_supabase_auth
+from app.core.db import engine
+from app.main import app
+
+# Tables the tests truncate between cases, ordered so cascades stay valid.
+_APPLICATION_TABLES = (
+    "answer_citations",
+    "answer_sources",
+    "chat_messages",
+    "document_chunks",
+    "documents",
+    "memories",
+    "chats",
+)
 
 
 class FakeAuth:
@@ -24,7 +43,7 @@ class FakeAuth:
         pass
 
 
-class FakeSupabase:
+class FakeSupabaseAuthClient:
     def __init__(self) -> None:
         self.auth = FakeAuth()
 
@@ -47,10 +66,64 @@ def authenticated_claims(
 
 
 @pytest.fixture
-def user_id() -> UUID:
-    return uuid7()
+def supabase_auth() -> FakeSupabaseAuthClient:
+    return FakeSupabaseAuthClient()
 
 
 @pytest.fixture
-def supabase() -> FakeSupabase:
-    return FakeSupabase()
+def db_session() -> Iterator[Session]:
+    with Session(engine) as session:
+        yield session
+
+
+@pytest.fixture(autouse=True)
+def clean_database() -> Iterator[None]:
+    """Leave the database as the test found it, including created auth users."""
+
+    yield
+    with Session(engine) as session:
+        session.exec(text(f"TRUNCATE {', '.join(_APPLICATION_TABLES)} CASCADE"))
+        session.exec(
+            text("DELETE FROM auth.users WHERE email LIKE :pattern").bindparams(
+                pattern="%@example.test",
+            )
+        )
+        session.commit()
+
+
+@pytest.fixture
+def create_user(db_session: Session):
+    """Insert a Supabase Auth user row so application foreign keys resolve."""
+
+    def factory(email: str | None = None) -> UUID:
+        user_id = uuid7()
+        db_session.exec(
+            text(
+                "INSERT INTO auth.users (id, instance_id, aud, role, email) "
+                "VALUES (:id, '00000000-0000-0000-0000-000000000000', "
+                "'authenticated', 'authenticated', :email)"
+            ).bindparams(
+                id=user_id,
+                email=email or f"{user_id}@example.test",
+            )
+        )
+        db_session.commit()
+        return user_id
+
+    return factory
+
+
+@pytest.fixture
+def client(
+    supabase_auth: FakeSupabaseAuthClient,
+    db_session: Session,
+) -> Iterator[TestClient]:
+    """A client whose Supabase Auth boundary is a double, on the real database."""
+
+    app.dependency_overrides[get_supabase_auth] = lambda: supabase_auth
+    app.dependency_overrides[get_db] = lambda: db_session
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        app.dependency_overrides.clear()
