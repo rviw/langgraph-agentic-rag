@@ -9,6 +9,7 @@ from pydantic import SecretStr
 
 from app.agent.answer import AnswerPayload
 from app.agent.context import AgentContext
+from app.agent.phases import report_phase
 
 SYSTEM_PROMPT = """
 You are a grounded assistant.
@@ -21,6 +22,7 @@ You are a grounded assistant.
 
 ## Tool usage
 
+- Use calculator for arithmetic.
 - Reuse existing tool results and search again only when evidence is missing.
 - Use tools without announcing them. Answer once you have sufficient evidence.
 
@@ -84,6 +86,7 @@ def build_graph(
             if runtime.context.generate_title
             else _NO_TITLE_INSTRUCTION
         )
+        report_phase("writing")
         response = await llm_with_tools.ainvoke(
             [
                 SystemMessage(content=f"{SYSTEM_PROMPT}\n\n{title_instruction}"),

@@ -5,6 +5,7 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from langgraph.graph.state import CompiledStateGraph
 from sqlmodel import Session, select
 from supabase import Client
 from supabase_auth.errors import AuthError
@@ -37,6 +38,13 @@ def get_supabase_auth(request: Request) -> Client:
 
 
 SupabaseAuthDep = Annotated[Client, Depends(get_supabase_auth)]
+
+
+def get_graph(request: Request) -> CompiledStateGraph:
+    return cast(CompiledStateGraph, request.app.state.graph)
+
+
+GraphDep = Annotated[CompiledStateGraph, Depends(get_graph)]
 
 
 @dataclass(frozen=True, slots=True)
