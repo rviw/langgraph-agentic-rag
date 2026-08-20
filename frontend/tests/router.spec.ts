@@ -1,5 +1,14 @@
 import { expect, test } from "@playwright/test";
 
+import { stubApi } from "./support/api.ts";
+import { signIn, stubSupabaseAuth } from "./support/supabase.ts";
+
+test.beforeEach(async ({ page }) => {
+  await stubSupabaseAuth(page);
+  await signIn(page);
+  await stubApi(page);
+});
+
 test("the root path lands on the chat area", async ({ page }) => {
   await page.goto("/");
 

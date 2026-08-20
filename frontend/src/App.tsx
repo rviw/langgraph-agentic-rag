@@ -1,6 +1,9 @@
 import { createBrowserRouter, replace } from "react-router";
 import { RouterProvider } from "react-router/dom";
 
+import { AuthLayout } from "@/components/auth/AuthLayout";
+import { RequireAuth } from "@/components/auth/RequireAuth";
+import { LoginPage } from "@/pages/auth/LoginPage";
 import { ChatIndexPage } from "@/pages/chat/ChatIndexPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { RouteErrorPage } from "@/pages/RouteErrorPage";
@@ -11,7 +14,14 @@ const router = createBrowserRouter([
     ErrorBoundary: RouteErrorPage,
     children: [
       { index: true, loader: () => replace("/chats") },
-      { path: "chats", Component: ChatIndexPage },
+      {
+        Component: AuthLayout,
+        children: [{ path: "login", Component: LoginPage }],
+      },
+      {
+        Component: RequireAuth,
+        children: [{ path: "chats", Component: ChatIndexPage }],
+      },
       { path: "*", Component: NotFoundPage },
     ],
   },
