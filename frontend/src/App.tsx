@@ -3,6 +3,7 @@ import { RouterProvider } from "react-router/dom";
 
 import { AuthLayout } from "@/components/auth/AuthLayout";
 import { RequireAuth } from "@/components/auth/RequireAuth";
+import { ChatLayout } from "@/components/chat/ChatLayout";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { ChatIndexPage } from "@/pages/chat/ChatIndexPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
@@ -20,7 +21,13 @@ const router = createBrowserRouter([
       },
       {
         Component: RequireAuth,
-        children: [{ path: "chats", Component: ChatIndexPage }],
+        children: [
+          {
+            path: "chats",
+            Component: ChatLayout,
+            children: [{ index: true, Component: ChatIndexPage }],
+          },
+        ],
       },
       { path: "*", Component: NotFoundPage },
     ],
