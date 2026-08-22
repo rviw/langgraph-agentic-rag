@@ -8,9 +8,14 @@ from sqlalchemy import text
 from sqlmodel import Session
 from supabase_auth.errors import AuthApiError
 
-from app.api.deps import get_db, get_supabase_auth
+from app.api.deps import get_db, get_document_storage, get_supabase_auth
 from app.core.db import engine
 from app.main import app
+from app.storage.documents import (
+    DocumentObjectInfo,
+    DocumentObjectNotFound,
+    SignedUpload,
+)
 
 # Tables the tests truncate between cases, ordered so cascades stay valid.
 _APPLICATION_TABLES = (
@@ -70,6 +75,46 @@ def supabase_auth() -> FakeSupabaseAuthClient:
     return FakeSupabaseAuthClient()
 
 
+class FakeDocumentStorage:
+    """Records Storage calls and serves only objects a test uploaded."""
+
+    def __init__(self) -> None:
+        self.objects: dict[str, tuple[bytes, str]] = {}
+        self.signed_paths: list[str] = []
+        self.removed_paths: list[str] = []
+
+    def upload(
+        self, path: str, data: bytes, media_type: str = "application/pdf"
+    ) -> None:
+        self.objects[path] = (data, media_type)
+
+    def create_signed_upload(self, path: str) -> SignedUpload:
+        self.signed_paths.append(path)
+        return SignedUpload(bucket="documents", path=path, token="signed-token")
+
+    def info(self, path: str) -> DocumentObjectInfo | None:
+        stored = self.objects.get(path)
+        if stored is None:
+            return None
+        data, media_type = stored
+        return DocumentObjectInfo(size_bytes=len(data), media_type=media_type)
+
+    def download(self, path: str) -> bytes:
+        stored = self.objects.get(path)
+        if stored is None:
+            raise DocumentObjectNotFound
+        return stored[0]
+
+    def remove(self, path: str) -> None:
+        self.removed_paths.append(path)
+        self.objects.pop(path, None)
+
+
+@pytest.fixture
+def document_storage() -> FakeDocumentStorage:
+    return FakeDocumentStorage()
+
+
 @pytest.fixture
 def db_session() -> Iterator[Session]:
     with Session(engine) as session:
@@ -117,11 +162,13 @@ def create_user(db_session: Session):
 def client(
     supabase_auth: FakeSupabaseAuthClient,
     db_session: Session,
+    document_storage: FakeDocumentStorage,
 ) -> Iterator[TestClient]:
     """A client whose Supabase Auth boundary is a double, on the real database."""
 
     app.dependency_overrides[get_supabase_auth] = lambda: supabase_auth
     app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_document_storage] = lambda: document_storage
     try:
         with TestClient(app) as test_client:
             yield test_client

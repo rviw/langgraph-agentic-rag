@@ -10,7 +10,13 @@ from sqlmodel import Session, select
 from app.agent.answer import title_from_question
 from app.agent.execution import ChatExecution, execute_chat
 from app.agent.phases import ExecutionPhase, observe_phases
-from app.api.deps import CurrentUserDep, DbSessionDep, GraphDep, OwnedChatDep
+from app.api.deps import (
+    CurrentUserDep,
+    DbSessionDep,
+    DocumentStorageDep,
+    GraphDep,
+    OwnedChatDep,
+)
 from app.api.streaming import (
     HEARTBEAT_FRAME,
     HEARTBEAT_SECONDS,
@@ -24,7 +30,7 @@ from app.db.chat_messages import (
     set_chat_title,
 )
 from app.db.chat_messages import list_chat_messages as list_stored_messages
-from app.models import Chat
+from app.models import Chat, Document
 from app.schemas.chats import (
     ChatMessageResponse,
     ChatResponse,
@@ -74,8 +80,19 @@ def get_chat(chat: OwnedChatDep) -> Chat:
 
 
 @router.delete("/{chat_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_chat(chat: OwnedChatDep, db_session: DbSessionDep) -> None:
+def delete_chat(
+    chat: OwnedChatDep,
+    db_session: DbSessionDep,
+    storage: DocumentStorageDep,
+) -> None:
     """Delete a chat. Cascades remove its transcript and captured sources."""
+
+    # Stored objects are not covered by database cascades.
+    document = db_session.exec(
+        select(Document).where(Document.chat_id == chat.id)
+    ).one_or_none()
+    if document is not None:
+        storage.remove(document.storage_object_path)
 
     db_session.delete(chat)
     db_session.commit()

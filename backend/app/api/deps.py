@@ -12,6 +12,7 @@ from supabase_auth.errors import AuthError
 
 from app.core.db import engine
 from app.models import Chat
+from app.storage.documents import DocumentStorage
 
 _JWT_AUDIENCE = "authenticated"
 _bearer = HTTPBearer()
@@ -45,6 +46,13 @@ def get_graph(request: Request) -> CompiledStateGraph:
 
 
 GraphDep = Annotated[CompiledStateGraph, Depends(get_graph)]
+
+
+def get_document_storage(request: Request) -> DocumentStorage:
+    return cast(DocumentStorage, request.app.state.document_storage)
+
+
+DocumentStorageDep = Annotated[DocumentStorage, Depends(get_document_storage)]
 
 
 @dataclass(frozen=True, slots=True)
