@@ -6,6 +6,7 @@ import { RequireAuth } from "@/components/auth/RequireAuth";
 import { ChatLayout } from "@/components/chat/ChatLayout";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { ChatIndexPage } from "@/pages/chat/ChatIndexPage";
+import { ChatPage } from "@/pages/chat/ChatPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { RouteErrorPage } from "@/pages/RouteErrorPage";
 
@@ -25,7 +26,10 @@ const router = createBrowserRouter([
           {
             path: "chats",
             Component: ChatLayout,
-            children: [{ index: true, Component: ChatIndexPage }],
+            children: [
+              { index: true, Component: ChatIndexPage },
+              { path: ":chatId", Component: ChatPage },
+            ],
           },
         ],
       },
