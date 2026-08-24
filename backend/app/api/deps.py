@@ -12,6 +12,7 @@ from supabase_auth.errors import AuthError
 
 from app.core.db import engine
 from app.models import Chat
+from app.rag.runner import DocumentIndexingRunner
 from app.storage.documents import DocumentStorage
 
 _JWT_AUDIENCE = "authenticated"
@@ -53,6 +54,13 @@ def get_document_storage(request: Request) -> DocumentStorage:
 
 
 DocumentStorageDep = Annotated[DocumentStorage, Depends(get_document_storage)]
+
+
+def get_indexing_runner(request: Request) -> DocumentIndexingRunner:
+    return cast(DocumentIndexingRunner, request.app.state.indexing_runner)
+
+
+IndexingRunnerDep = Annotated[DocumentIndexingRunner, Depends(get_indexing_runner)]
 
 
 @dataclass(frozen=True, slots=True)

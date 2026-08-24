@@ -11,6 +11,7 @@ from supabase_auth.errors import AuthApiError
 from app.api.deps import get_db, get_document_storage, get_supabase_auth
 from app.core.db import engine
 from app.main import app
+from app.rag.runner import DocumentIndexingRunner
 from app.storage.documents import (
     DocumentObjectInfo,
     DocumentObjectNotFound,
@@ -158,14 +159,44 @@ def create_user(db_session: Session):
     return factory
 
 
+class RecordingIndexingRunner:
+    """Record API wakeups; dedicated runner tests exercise actual indexing."""
+
+    def __init__(self) -> None:
+        self.requests = 0
+
+    async def start(self) -> None:
+        pass
+
+    async def stop(self) -> None:
+        pass
+
+    def request_run(self) -> None:
+        self.requests += 1
+
+
+@pytest.fixture
+def indexing_runner() -> RecordingIndexingRunner:
+    return RecordingIndexingRunner()
+
+
 @pytest.fixture
 def client(
     supabase_auth: FakeSupabaseAuthClient,
     db_session: Session,
     document_storage: FakeDocumentStorage,
+    indexing_runner: RecordingIndexingRunner,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[TestClient]:
     """A client whose Supabase Auth boundary is a double, on the real database."""
 
+    # Lifespan creates this worker directly, outside FastAPI dependency overrides.
+    # Patch its factory before TestClient starts the application.
+    monkeypatch.setattr(
+        DocumentIndexingRunner,
+        "for_database",
+        classmethod(lambda _cls, **_kwargs: indexing_runner),
+    )
     app.dependency_overrides[get_supabase_auth] = lambda: supabase_auth
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_document_storage] = lambda: document_storage

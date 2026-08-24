@@ -4,7 +4,12 @@ from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
-from app.api.deps import DbSessionDep, DocumentStorageDep, OwnedChatDep
+from app.api.deps import (
+    DbSessionDep,
+    DocumentStorageDep,
+    IndexingRunnerDep,
+    OwnedChatDep,
+)
 from app.core.config import settings
 from app.models import Document
 from app.schemas.documents import (
@@ -120,6 +125,7 @@ def confirm_document_upload(
     chat: OwnedChatDep,
     db_session: DbSessionDep,
     storage: DocumentStorageDep,
+    indexing_runner: IndexingRunnerDep,
 ) -> Document:
     """Verify the uploaded object matches the reservation, then queue indexing.
 
@@ -135,6 +141,7 @@ def confirm_document_upload(
         )
     if document.status != "upload_pending":
         db_session.rollback()
+        indexing_runner.request_run()
         return document
 
     stored = storage.info(document.storage_object_path)
@@ -154,6 +161,7 @@ def confirm_document_upload(
     db_session.add(document)
     db_session.commit()
     db_session.refresh(document)
+    indexing_runner.request_run()
     return document
 
 

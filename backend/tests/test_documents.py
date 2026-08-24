@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from tests.conftest import (
     FakeDocumentStorage,
     FakeSupabaseAuthClient,
+    RecordingIndexingRunner,
     authenticated_claims,
 )
 
@@ -143,6 +144,7 @@ def test_confirming_twice_leaves_the_queued_document_alone(
     headers: dict[str, str],
     chat_id: str,
     document_storage: FakeDocumentStorage,
+    indexing_runner: RecordingIndexingRunner,
 ) -> None:
     reserved = reserve(client, headers, chat_id).json()
     document_storage.upload(reserved["upload"]["path"], PDF_BYTES)
@@ -153,7 +155,10 @@ def test_confirming_twice_leaves_the_queued_document_alone(
 
     assert first.json()["status"] == "indexing_pending"
     assert second.status_code == 200
+    # Both requests wake the worker, but neither executes indexing in API tests.
     assert second.json()["status"] == "indexing_pending"
+    assert indexing_runner.requests == 2
+    assert second.json()["id"] == first.json()["id"]
 
 
 @pytest.mark.parametrize(
