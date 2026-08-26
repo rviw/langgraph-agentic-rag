@@ -13,6 +13,8 @@ from app.core.supabase import (
     create_supabase_storage_client,
 )
 from app.models.document import EMBEDDING_DIMENSIONS
+from app.rag.reranking import CohereReranker
+from app.rag.retrieval import create_search_documents_tool
 from app.rag.runner import DocumentIndexingRunner
 from app.storage.documents import DocumentStorage
 
@@ -34,10 +36,18 @@ async def lifespan(app: FastAPI):
         settings.SUPABASE_STORAGE_BUCKET,
     )
     app.state.document_storage = document_storage
+    reranker = CohereReranker(api_key=settings.COHERE_API_KEY)
     app.state.graph = build_graph(
         model=settings.OPENAI_MAIN_MODEL,
         api_key=settings.OPENAI_API_KEY,
-        tools=[calculator],
+        tools=[
+            create_search_documents_tool(
+                engine=engine,
+                embeddings=embeddings,
+                reranker=reranker,
+            ),
+            calculator,
+        ],
     )
     indexing_runner = DocumentIndexingRunner.for_database(
         engine=engine,
@@ -51,6 +61,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await indexing_runner.stop()
+        reranker.close()
         supabase_auth.auth.close()
         supabase_storage.auth.close()
 
