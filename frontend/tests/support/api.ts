@@ -41,7 +41,26 @@ export type ApiStub = {
   /** Status returned instead of the stream, when set. */
   streamStatus?: { status: number; detail: string };
   listStatus?: { status: number; detail: string };
+  /** The chat's document, or null when the chat has none. */
+  document: StubDocument | null;
+  /** Status the document is given once an upload is confirmed. */
+  confirmedStatus: StubDocument["status"];
   requests: string[];
+};
+
+export type StubDocument = {
+  id: string;
+  original_filename: string;
+  media_type: string;
+  size_bytes: number;
+  status:
+    | "upload_pending"
+    | "indexing_pending"
+    | "indexing"
+    | "ready"
+    | "indexing_failed";
+  indexing_error_code: string | null;
+  created_at: string;
 };
 
 export async function stubApi(page: Page, initial: Partial<ApiStub> = {}) {
@@ -51,8 +70,16 @@ export async function stubApi(page: Page, initial: Partial<ApiStub> = {}) {
     stream: initial.stream ?? "",
     streamStatus: initial.streamStatus,
     listStatus: initial.listStatus,
+    document: initial.document ?? null,
+    confirmedStatus: initial.confirmedStatus ?? "indexing_pending",
     requests: [],
   };
+
+  // Signed Storage uploads succeed unless a test overrides this route.
+  await page.route("**/supabase/storage/v1/**", async (route) => {
+    stub.requests.push(`${route.request().method()} storage`);
+    await json(route, { Key: "documents/uploaded" });
+  });
 
   await page.route("**/api/chats**", async (route) => {
     const request = route.request();
@@ -109,6 +136,61 @@ export async function stubApi(page: Page, initial: Partial<ApiStub> = {}) {
     if (request.method() === "GET" && path.endsWith("/messages")) {
       await json(route, stub.messages);
       return;
+    }
+
+    if (path.endsWith("/document/confirm-upload")) {
+      if (stub.document) {
+        stub.document = { ...stub.document, status: stub.confirmedStatus };
+        await json(route, stub.document);
+        return;
+      }
+      await json(route, { detail: "This document is no longer available." }, 404);
+      return;
+    }
+
+    if (path.endsWith("/document")) {
+      if (request.method() === "GET") {
+        if (!stub.document) {
+          await route.fulfill({ status: 204, body: "" });
+          return;
+        }
+        await json(route, stub.document);
+        return;
+      }
+      if (request.method() === "POST") {
+        const payload = request.postDataJSON() as {
+          original_filename: string;
+          media_type: string;
+          size_bytes: number;
+        };
+        stub.document = {
+          id: "document-1",
+          original_filename: payload.original_filename,
+          media_type: payload.media_type,
+          size_bytes: payload.size_bytes,
+          status: "upload_pending",
+          indexing_error_code: null,
+          created_at: "2026-08-26T00:00:00Z",
+        };
+        await json(
+          route,
+          {
+            document: stub.document,
+            upload: {
+              bucket: "documents",
+              path: "user/document-1/original.pdf",
+              token: "signed-token",
+            },
+          },
+          201,
+        );
+        return;
+      }
+      if (request.method() === "DELETE") {
+        stub.document = null;
+        await route.fulfill({ status: 204, body: "" });
+        return;
+      }
     }
 
     if (request.method() === "GET") {

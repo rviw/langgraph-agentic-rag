@@ -10,6 +10,7 @@ import {
 import { useOutletContext, useParams } from "react-router";
 
 import type { ChatOutletContext } from "@/components/chat/ChatLayout";
+import { ChatDocument, type DocumentGate } from "@/components/chat/ChatDocument";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -62,6 +63,9 @@ function ChatView({
   const [input, setInput] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
   const [failedContent, setFailedContent] = useState<string | null>(null);
+  const [documentGate, setDocumentGate] = useState<DocumentGate>({
+    blocksSending: true,
+  });
   const historyController = useRef<AbortController | null>(null);
   const streamController = useRef<AbortController | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -167,7 +171,8 @@ function ChatView({
   }
 
   const isReady = historyStatus === "ready";
-  const canSend = isReady && !isSending;
+  // A document that is not ready would answer from incomplete evidence.
+  const canSend = isReady && !isSending && !documentGate.blocksSending;
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -269,8 +274,12 @@ function ChatView({
         </div>
       </div>
 
-      <form className="shrink-0 border-t bg-background p-3" onSubmit={handleSubmit}>
-        <div className="relative mx-auto w-full max-w-3xl overflow-hidden rounded-xl border bg-transparent shadow-xs focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+      <form className="shrink-0 border-t bg-background" onSubmit={handleSubmit}>
+        <ChatDocument
+          accessToken={accessToken}
+          chatId={chatId}
+          onGateChange={setDocumentGate}
+        >
           <textarea
             aria-label="Message"
             name="message"
@@ -293,7 +302,7 @@ function ChatView({
           >
             {isSending ? <Spinner aria-hidden="true" /> : <ArrowUpIcon aria-hidden="true" />}
           </Button>
-        </div>
+        </ChatDocument>
       </form>
     </section>
   );

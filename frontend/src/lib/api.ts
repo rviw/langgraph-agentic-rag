@@ -14,6 +14,32 @@ export type ChatMessageResponse = {
   content: string;
 };
 
+export type DocumentStatus =
+  | "upload_pending"
+  | "indexing_pending"
+  | "indexing"
+  | "ready"
+  | "indexing_failed";
+
+export type DocumentResponse = {
+  id: string;
+  original_filename: string;
+  media_type: string;
+  size_bytes: number;
+  status: DocumentStatus;
+  indexing_error_code:
+    | "invalid_pdf"
+    | "storage_missing"
+    | "unexpected_failure"
+    | null;
+  created_at: string;
+};
+
+export type DocumentUploadResponse = {
+  document: DocumentResponse;
+  upload: { bucket: string; path: string; token: string };
+};
+
 export type ExecutionPhase =
   | "understanding"
   | "searching"
@@ -145,6 +171,67 @@ export async function listChatMessages(
 ): Promise<ChatMessageResponse[]> {
   return parsed(
     await request(messagesUrl(chatId), authorized(accessToken, { signal })),
+  );
+}
+
+function documentUrl(chatId: string): string {
+  return `${CHATS_URL}/${encodeURIComponent(chatId)}/document`;
+}
+
+export async function getDocument(
+  accessToken: string,
+  chatId: string,
+  signal?: AbortSignal,
+): Promise<DocumentResponse | null> {
+  const response = await request(
+    documentUrl(chatId),
+    authorized(accessToken, { signal }),
+  );
+  // A chat without a document is a normal state, not a failure.
+  if (response.status === 204) {
+    return null;
+  }
+  return parsed(response);
+}
+
+export async function createDocumentUpload(
+  accessToken: string,
+  chatId: string,
+  payload: { original_filename: string; media_type: string; size_bytes: number },
+): Promise<DocumentUploadResponse> {
+  return parsed(
+    await request(
+      documentUrl(chatId),
+      authorized(accessToken, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }),
+    ),
+  );
+}
+
+export async function confirmDocumentUpload(
+  accessToken: string,
+  chatId: string,
+): Promise<DocumentResponse> {
+  return parsed(
+    await request(
+      `${documentUrl(chatId)}/confirm-upload`,
+      authorized(accessToken, { method: "POST" }),
+    ),
+  );
+}
+
+export async function deleteDocument(
+  accessToken: string,
+  chatId: string,
+): Promise<void> {
+  await expectNoContent(
+    await request(
+      documentUrl(chatId),
+      authorized(accessToken, { method: "DELETE" }),
+    ),
   );
 }
 
