@@ -119,11 +119,10 @@ def test_a_turn_is_accepted_then_completed_with_the_stored_answer(
         "searching",
         "reading",
     ]
-    assert events[-1][1]["message"] == {
-        "id": events[-1][1]["message"]["id"],
-        "role": "assistant",
-        "content": "A grounded answer.",
-    }
+    completed = events[-1][1]["message"]
+    assert completed["role"] == "assistant"
+    assert completed["content"] == "A grounded answer."
+    assert completed["citations"] == []
 
 
 def test_the_completed_turn_is_the_stored_transcript(

@@ -15,6 +15,7 @@ from sqlmodel import Session, select
 
 from app.agent.context import AgentContext
 from app.agent.phases import report_phase
+from app.db.answer_sources import DocumentSourceCandidate, record_document_sources
 from app.models import Document, DocumentChunk
 from app.rag.reranking import DocumentReranker, RerankDocument
 
@@ -307,24 +308,44 @@ def create_search_documents_tool(
         """Search the PDF uploaded to the current chat."""
 
         report_phase("searching")
+        context = runtime.context
         with Session(engine) as db_session:
             chunks = retrieve_document_chunks(
                 db_session=db_session,
                 embeddings=embeddings,
                 reranker=reranker,
-                chat_id=runtime.context.chat_id,
+                chat_id=context.chat_id,
                 query=query,
+            )
+            sources = record_document_sources(
+                db_session,
+                execution_id=context.execution_id,
+                chat_id=context.chat_id,
+                candidates=[
+                    DocumentSourceCandidate(
+                        document_id=chunk.document_id,
+                        chunk_id=chunk.chunk_id,
+                        chunk_index=chunk.chunk_index,
+                        filename=chunk.filename,
+                        page=chunk.page,
+                        excerpt=chunk.content,
+                    )
+                    for chunk in chunks
+                ],
             )
         report_phase("reading")
         return json.dumps(
             {
                 "results": [
                     {
-                        "filename": chunk.filename,
-                        "page": chunk.page,
-                        "content": chunk.content,
+                        # The model may cite only these identifiers.
+                        "source_id": str(source.source_id),
+                        "type": source.type,
+                        "filename": source.filename,
+                        "page": source.page,
+                        "content": source.excerpt,
                     }
-                    for chunk in chunks
+                    for source in sources
                 ]
             },
             ensure_ascii=False,

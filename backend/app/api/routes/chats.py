@@ -1,9 +1,9 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from uuid import uuid7
+from uuid import UUID, uuid7
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
@@ -24,6 +24,11 @@ from app.api.streaming import (
     event_frame,
 )
 from app.core.db import engine
+from app.db.answer_sources import (
+    publish_citations,
+    read_citations,
+    read_source_detail,
+)
 from app.db.chat_messages import (
     append_assistant_message,
     append_user_message,
@@ -40,6 +45,11 @@ from app.schemas.chats import (
     ExecutionProgressEvent,
     MessageAcceptedEvent,
     MessageCompletedEvent,
+)
+from app.schemas.sources import (
+    SourceDetailResponse,
+    citation_responses,
+    source_detail_response,
 )
 
 router = APIRouter(prefix="/chats", tags=["chats"])
@@ -105,14 +115,43 @@ def list_chat_message_history(
 ) -> list[ChatMessageResponse]:
     """Return the stored transcript in the order it was written."""
 
+    messages = list_stored_messages(db_session, chat_id=chat.id)
+    citations = read_citations(
+        db_session,
+        message_ids=[message.id for message in messages],
+    )
     return [
         ChatMessageResponse(
             id=message.id,
             role=message.role,
             content=message.content,
+            citations=citation_responses(citations.get(message.id, ())),
         )
-        for message in list_stored_messages(db_session, chat_id=chat.id)
+        for message in messages
     ]
+
+
+@router.get(
+    "/{chat_id}/messages/{message_id}/sources/{source_id}",
+    response_model=SourceDetailResponse,
+)
+def get_source_detail(
+    chat: OwnedChatDep,
+    message_id: UUID,
+    source_id: UUID,
+    db_session: DbSessionDep,
+) -> SourceDetailResponse:
+    """Read a source cited by the requested message in an owned chat."""
+
+    detail = read_source_detail(
+        db_session, chat_id=chat.id, message_id=message_id, source_id=source_id
+    )
+    if detail is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This source is no longer available.",
+        )
+    return source_detail_response(detail)
 
 
 async def _stream_turn(
@@ -163,6 +202,11 @@ async def _stream_turn(
                         chat_id=execution.chat_id,
                         content=answer.markdown,
                     )
+                    citations = publish_citations(
+                        db_session,
+                        assistant_message_id=assistant.id,
+                        source_ids=answer.source_ids,
+                    )
                     if accepted.is_first_user_message:
                         set_chat_title(
                             db_session,
@@ -175,6 +219,7 @@ async def _stream_turn(
                         id=assistant.id,
                         role="assistant",
                         content=assistant.content,
+                        citations=citation_responses(citations),
                     )
                 )
             finally:

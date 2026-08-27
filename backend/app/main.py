@@ -47,7 +47,10 @@ async def lifespan(app: FastAPI):
                 embeddings=embeddings,
                 reranker=reranker,
             ),
-            create_search_web_tool(api_key=settings.TAVILY_API_KEY),
+            create_search_web_tool(
+                api_key=settings.TAVILY_API_KEY,
+                engine=engine,
+            ),
             calculator,
         ],
     )

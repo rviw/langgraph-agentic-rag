@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent.phases import ExecutionPhase
+from app.schemas.sources import CitationResponse
 
 
 class ChatResponse(BaseModel):
@@ -19,6 +20,7 @@ class ChatMessageResponse(BaseModel):
     id: UUID
     role: Literal["user", "assistant"]
     content: str
+    citations: list[CitationResponse] = []
 
 
 class CreateChatMessageRequest(BaseModel):
