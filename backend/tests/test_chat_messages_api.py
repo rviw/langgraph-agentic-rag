@@ -1,12 +1,14 @@
 import json
 from collections.abc import Callable, Iterator
 from typing import Any
+from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 
+from app.agent.grounding import GroundingFailed
 from app.agent.phases import ExecutionPhase, report_phase
 from app.api.deps import get_graph
 from app.main import app
@@ -213,6 +215,46 @@ def test_the_user_message_survives_a_failed_answer(
     assert [(item["role"], item["content"]) for item in stored] == [
         ("user", "Question"),
     ]
+
+
+@pytest.mark.parametrize("eventually_passes", [True, False])
+def test_grounding_retries_publish_only_after_acceptance(
+    client,
+    headers,
+    use_graph,
+    grounding_validator,
+    monkeypatch,
+    eventually_passes,
+):
+    use_graph(FakeGraph())
+    validate = AsyncMock(
+        side_effect=[
+            GroundingFailed(),
+            GroundingFailed(),
+            None if eventually_passes else GroundingFailed(),
+        ]
+    )
+    monkeypatch.setattr(grounding_validator, "validate", validate)
+    chat_id = client.post("/api/chats", headers=headers).json()["id"]
+
+    response = client.post(
+        f"/api/chats/{chat_id}/messages",
+        headers=headers,
+        json={"content": "Question"},
+    )
+
+    events = sse_events(response.text)
+    stored = client.get(f"/api/chats/{chat_id}/messages", headers=headers).json()
+    completed = [payload for name, payload in events if name == "message.completed"]
+    failed = [payload for name, payload in events if name == "execution.failed"]
+    if eventually_passes:
+        assert len(completed) == 1
+        assert failed == []
+        assert [item["role"] for item in stored] == ["user", "assistant"]
+    else:
+        assert completed == []
+        assert len(failed) == 1
+        assert [item["role"] for item in stored] == ["user"]
 
 
 @pytest.mark.parametrize(

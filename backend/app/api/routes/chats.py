@@ -9,12 +9,14 @@ from sqlmodel import Session, select
 
 from app.agent.answer import title_from_question
 from app.agent.execution import ChatExecution, execute_chat
+from app.agent.grounding import GroundingFailed
 from app.agent.phases import ExecutionPhase, observe_phases
 from app.api.deps import (
     CurrentUserDep,
     DbSessionDep,
     DocumentStorageDep,
     GraphDep,
+    GroundingValidatorDep,
     OwnedChatDep,
 )
 from app.api.streaming import (
@@ -56,6 +58,7 @@ router = APIRouter(prefix="/chats", tags=["chats"])
 logger = logging.getLogger(__name__)
 
 _GENERIC_FAILURE = "Couldn’t generate a response."
+_UNGROUNDED_FAILURE = "Sources don’t support an answer. Try another question."
 
 
 @router.post("", response_model=ChatResponse, status_code=status.HTTP_201_CREATED)
@@ -157,6 +160,7 @@ def get_source_detail(
 async def _stream_turn(
     *,
     graph,
+    grounding_validator,
     execution: ChatExecution,
     content: str,
 ) -> AsyncIterator[str]:
@@ -192,6 +196,7 @@ async def _stream_turn(
                 with observe_phases(phases.put_nowait):
                     answer = await execute_chat(
                         graph=graph,
+                        grounding_validator=grounding_validator,
                         execution=execution,
                         messages=accepted.history,
                         generate_title=accepted.is_first_user_message,
@@ -243,6 +248,14 @@ async def _stream_turn(
                 yield event_frame(ExecutionProgressEvent(phase=phase))
 
         yield event_frame(await answer_task)
+    except GroundingFailed:
+        # The evidence genuinely does not support an answer, which is worth saying.
+        logger.info("Chat execution produced no grounded answer")
+        yield event_frame(
+            ExecutionFailedEvent(
+                error=ExecutionErrorResponse(message=_UNGROUNDED_FAILURE)
+            )
+        )
     except Exception:
         # The caller sees one safe message; details stay in the server log.
         logger.exception("Chat execution failed")
@@ -259,6 +272,7 @@ def create_chat_message(
     payload: CreateChatMessageRequest,
     chat: OwnedChatDep,
     graph: GraphDep,
+    grounding_validator: GroundingValidatorDep,
 ) -> StreamingResponse:
     """Answer one user message, streaming progress until the answer is stored."""
 
@@ -268,7 +282,12 @@ def create_chat_message(
         user_id=chat.user_id,
     )
     return StreamingResponse(
-        _stream_turn(graph=graph, execution=execution, content=payload.content),
+        _stream_turn(
+            graph=graph,
+            grounding_validator=grounding_validator,
+            execution=execution,
+            content=payload.content,
+        ),
         media_type="text/event-stream",
         headers=SSE_HEADERS,
     )

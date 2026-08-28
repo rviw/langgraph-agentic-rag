@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from langchain_openai import OpenAIEmbeddings
 
 from app.agent.graph import build_graph
+from app.agent.grounding import OpenAIGroundingValidator
 from app.agent.tools import calculator
 from app.api.main import api_router
 from app.core.config import settings
@@ -53,6 +54,10 @@ async def lifespan(app: FastAPI):
             ),
             calculator,
         ],
+    )
+    app.state.grounding_validator = OpenAIGroundingValidator(
+        model=settings.OPENAI_GROUNDING_MODEL,
+        api_key=settings.OPENAI_API_KEY,
     )
     indexing_runner = DocumentIndexingRunner.for_database(
         engine=engine,

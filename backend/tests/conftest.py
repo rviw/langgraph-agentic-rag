@@ -8,8 +8,15 @@ from sqlalchemy import text
 from sqlmodel import Session
 from supabase_auth.errors import AuthApiError
 
-from app.api.deps import get_db, get_document_storage, get_supabase_auth
+from app.agent.answer import Answer
+from app.api.deps import (
+    get_db,
+    get_document_storage,
+    get_grounding_validator,
+    get_supabase_auth,
+)
 from app.core.db import engine
+from app.db.answer_sources import AnswerSourceSnapshot
 from app.main import app
 from app.rag.runner import DocumentIndexingRunner
 from app.storage.documents import (
@@ -116,6 +123,29 @@ def document_storage() -> FakeDocumentStorage:
     return FakeDocumentStorage()
 
 
+class PassThroughGroundingValidator:
+    """Accepts drafts so stream tests observe the route only."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[Answer, bool]] = []
+
+    async def validate(
+        self,
+        *,
+        draft: Answer,
+        sources: tuple[AnswerSourceSnapshot, ...],
+        searched: bool,
+        user_request: str,
+    ) -> None:
+        del sources, user_request
+        self.calls.append((draft, searched))
+
+
+@pytest.fixture
+def grounding_validator() -> PassThroughGroundingValidator:
+    return PassThroughGroundingValidator()
+
+
 @pytest.fixture
 def db_session() -> Iterator[Session]:
     with Session(engine) as session:
@@ -187,6 +217,7 @@ def client(
     document_storage: FakeDocumentStorage,
     indexing_runner: RecordingIndexingRunner,
     monkeypatch: pytest.MonkeyPatch,
+    grounding_validator: PassThroughGroundingValidator,
 ) -> Iterator[TestClient]:
     """A client whose Supabase Auth boundary is a double, on the real database."""
 
@@ -200,6 +231,7 @@ def client(
     app.dependency_overrides[get_supabase_auth] = lambda: supabase_auth
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_document_storage] = lambda: document_storage
+    app.dependency_overrides[get_grounding_validator] = lambda: grounding_validator
     try:
         with TestClient(app) as test_client:
             yield test_client

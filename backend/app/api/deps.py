@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 from supabase import Client
 from supabase_auth.errors import AuthError
 
+from app.agent.grounding import GroundingValidator
 from app.core.db import engine
 from app.models import Chat
 from app.rag.runner import DocumentIndexingRunner
@@ -47,6 +48,16 @@ def get_graph(request: Request) -> CompiledStateGraph:
 
 
 GraphDep = Annotated[CompiledStateGraph, Depends(get_graph)]
+
+
+def get_grounding_validator(request: Request) -> GroundingValidator:
+    return cast(GroundingValidator, request.app.state.grounding_validator)
+
+
+GroundingValidatorDep = Annotated[
+    GroundingValidator,
+    Depends(get_grounding_validator),
+]
 
 
 def get_document_storage(request: Request) -> DocumentStorage:
