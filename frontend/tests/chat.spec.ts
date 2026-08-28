@@ -15,7 +15,7 @@ test("sending a message shows progress and then the answer", async ({ page }) =>
     stream: sseBody([
       {
         event: "message.accepted",
-        data: { message: { id: "m1", role: "user", content: "What is RAG?" } },
+        data: { message: { id: "m1", role: "user", content: "What is RAG?", citations: [] } },
       },
       { event: "execution.progress", data: { phase: "understanding" } },
       { comment: true },
@@ -27,6 +27,7 @@ test("sending a message shows progress and then the answer", async ({ page }) =>
             id: "m2",
             role: "assistant",
             content: "Retrieval augmented generation grounds answers.",
+            citations: [],
           },
         },
       },
@@ -54,7 +55,7 @@ test("a failed answer keeps the text and offers a retry", async ({ page }) => {
     stream: sseBody([
       {
         event: "message.accepted",
-        data: { message: { id: "m1", role: "user", content: "Question" } },
+        data: { message: { id: "m1", role: "user", content: "Question", citations: [] } },
       },
       {
         event: "execution.failed",
@@ -74,11 +75,11 @@ test("a failed answer keeps the text and offers a retry", async ({ page }) => {
   stub.stream = sseBody([
     {
       event: "message.accepted",
-      data: { message: { id: "m1", role: "user", content: "Question" } },
+      data: { message: { id: "m1", role: "user", content: "Question", citations: [] } },
     },
     {
       event: "message.completed",
-      data: { message: { id: "m2", role: "assistant", content: "An answer." } },
+      data: { message: { id: "m2", role: "assistant", content: "An answer.", citations: [] } },
     },
   ]);
   await page.getByRole("button", { name: "Retry" }).click();
@@ -108,8 +109,8 @@ test("stored messages are restored when a chat is opened", async ({ page }) => {
   await stubApi(page, {
     chats: [{ id: "chat-1", title: "Earlier chat" }],
     messages: [
-      { id: "m1", role: "user", content: "Earlier question" },
-      { id: "m2", role: "assistant", content: "Earlier answer" },
+      { id: "m1", role: "user", content: "Earlier question", citations: [] },
+      { id: "m2", role: "assistant", content: "Earlier answer", citations: [] },
     ],
   });
 

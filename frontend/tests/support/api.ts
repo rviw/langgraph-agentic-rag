@@ -10,6 +10,7 @@ export type StubMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  citations: unknown[];
 };
 
 /** Render server-sent events exactly as the backend frames them. */
@@ -45,6 +46,8 @@ export type ApiStub = {
   document: StubDocument | null;
   /** Status the document is given once an upload is confirmed. */
   confirmedStatus: StubDocument["status"];
+  /** Detail returned when a citation is opened. */
+  sourceDetail: unknown;
   requests: string[];
 };
 
@@ -72,6 +75,7 @@ export async function stubApi(page: Page, initial: Partial<ApiStub> = {}) {
     listStatus: initial.listStatus,
     document: initial.document ?? null,
     confirmedStatus: initial.confirmedStatus ?? "indexing_pending",
+    sourceDetail: initial.sourceDetail ?? null,
     requests: [],
   };
 
@@ -130,6 +134,15 @@ export async function stubApi(page: Page, initial: Partial<ApiStub> = {}) {
         },
         body: stub.stream,
       });
+      return;
+    }
+
+    if (request.method() === "GET" && path.includes("/sources/")) {
+      if (stub.sourceDetail) {
+        await json(route, stub.sourceDetail);
+        return;
+      }
+      await json(route, { detail: "This source is no longer available." }, 404);
       return;
     }
 

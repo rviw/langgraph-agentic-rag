@@ -10,6 +10,7 @@ import {
 import { useOutletContext, useParams } from "react-router";
 
 import type { ChatOutletContext } from "@/components/chat/ChatLayout";
+import { AssistantMessage } from "@/components/chat/AssistantMessage";
 import { ChatDocument, type DocumentGate } from "@/components/chat/ChatDocument";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -224,20 +225,27 @@ function ChatView({
             </p>
           )}
 
-          {messages.map((message) => (
-            <article
-              key={message.id}
-              data-message-id={message.id}
-              aria-label={message.role === "user" ? "You" : "Assistant"}
-              className={
-                message.role === "user"
-                  ? "ml-auto min-w-0 w-fit max-w-[78%] rounded-2xl bg-primary px-4 py-3 text-sm whitespace-pre-wrap break-words text-primary-foreground [overflow-wrap:anywhere] sm:max-w-[75%]"
-                  : "mr-auto min-w-0 w-fit max-w-[78%] rounded-2xl bg-muted px-4 py-3 text-sm whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]"
-              }
-            >
-              {message.content}
-            </article>
-          ))}
+          {messages.map((message) =>
+            message.role === "assistant" ? (
+              <AssistantMessage
+                key={message.id}
+                accessToken={accessToken}
+                chatId={chatId}
+                messageId={message.id}
+                content={message.content}
+                citations={message.citations}
+              />
+            ) : (
+              <article
+                key={message.id}
+                data-message-id={message.id}
+                aria-label="You"
+                className="ml-auto min-w-0 w-fit max-w-[78%] rounded-2xl bg-primary px-4 py-3 text-sm whitespace-pre-wrap break-words text-primary-foreground [overflow-wrap:anywhere] sm:max-w-[75%]"
+              >
+                {message.content}
+              </article>
+            ),
+          )}
 
           {isSending && (
             <div

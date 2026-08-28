@@ -12,7 +12,40 @@ export type ChatMessageResponse = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  citations: CitationResponse[];
 };
+
+type DocumentCitation = {
+  source_id: string;
+  type: "document";
+  document_id: string;
+  chunk_id: string;
+  chunk_index: number;
+  filename: string;
+  page: number;
+  excerpt: string;
+};
+
+type WebCitation = {
+  source_id: string;
+  type: "web";
+  title: string;
+  url: string;
+  excerpt: string;
+};
+
+export type CitationResponse = DocumentCitation | WebCitation;
+
+export type SourceDetailResponse =
+  | (DocumentCitation & {
+      context: {
+        chunk_id: string;
+        chunk_index: number;
+        page: number;
+        excerpt: string;
+      }[];
+    })
+  | WebCitation;
 
 export type DocumentStatus =
   | "upload_pending"
@@ -176,6 +209,22 @@ export async function listChatMessages(
 
 function documentUrl(chatId: string): string {
   return `${CHATS_URL}/${encodeURIComponent(chatId)}/document`;
+}
+
+export async function getSourceDetail(
+  accessToken: string,
+  chatId: string,
+  messageId: string,
+  sourceId: string,
+  signal?: AbortSignal,
+): Promise<SourceDetailResponse> {
+  return parsed(
+    await request(
+      `${messagesUrl(chatId)}/${encodeURIComponent(messageId)}` +
+        `/sources/${encodeURIComponent(sourceId)}`,
+      authorized(accessToken, { signal }),
+    ),
+  );
 }
 
 export async function getDocument(
