@@ -1,57 +1,14 @@
 import json
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock
 from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
-from langchain_core.messages import AIMessage
 
 from app.agent.grounding import GroundingFailed
-from app.agent.phases import ExecutionPhase, report_phase
-from app.api.deps import get_graph
-from app.main import app
-from tests.conftest import FakeSupabaseAuthClient, authenticated_claims
-
-
-class FakeGraph:
-    """Stands in for the compiled agent by replaying a scripted final answer."""
-
-    def __init__(
-        self,
-        *,
-        answer: dict[str, Any] | None = None,
-        phases: tuple[ExecutionPhase, ...] = (),
-        failure: Exception | None = None,
-    ) -> None:
-        self._answer = answer or {
-            "markdown": "A grounded answer.",
-            "source_ids": [],
-            "title": "Generated title",
-        }
-        self._phases = phases
-        self._failure = failure
-        self.contexts: list[Any] = []
-
-    async def ainvoke(
-        self,
-        state: dict[str, Any],
-        *,
-        config: dict[str, Any] | None = None,
-        context: Any = None,
-    ) -> dict[str, Any]:
-        self.contexts.append(context)
-        for phase in self._phases:
-            report_phase(phase)
-        if self._failure is not None:
-            raise self._failure
-        return {
-            "messages": [
-                *state["messages"],
-                AIMessage(content=json.dumps(self._answer)),
-            ]
-        }
+from tests.conftest import FakeGraph, FakeSupabaseAuthClient, authenticated_claims
 
 
 def sse_events(body: str) -> list[tuple[str, dict[str, Any]]]:
@@ -69,16 +26,6 @@ def sse_events(body: str) -> list[tuple[str, dict[str, Any]]]:
         if name is not None and data:
             events.append((name, json.loads("\n".join(data))))
     return events
-
-
-@pytest.fixture
-def use_graph() -> Iterator[Callable[[FakeGraph], FakeGraph]]:
-    def factory(graph: FakeGraph) -> FakeGraph:
-        app.dependency_overrides[get_graph] = lambda: graph
-        return graph
-
-    yield factory
-    app.dependency_overrides.pop(get_graph, None)
 
 
 @pytest.fixture
@@ -223,6 +170,7 @@ def test_grounding_retries_publish_only_after_acceptance(
     headers,
     use_graph,
     grounding_validator,
+    memory_extractor,
     monkeypatch,
     eventually_passes,
 ):
@@ -251,10 +199,12 @@ def test_grounding_retries_publish_only_after_acceptance(
         assert len(completed) == 1
         assert failed == []
         assert [item["role"] for item in stored] == ["user", "assistant"]
+        assert memory_extractor.calls == [("Question", "A grounded answer.")]
     else:
         assert completed == []
         assert len(failed) == 1
         assert [item["role"] for item in stored] == ["user"]
+        assert memory_extractor.calls == []
 
 
 @pytest.mark.parametrize(

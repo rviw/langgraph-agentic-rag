@@ -2,9 +2,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from langchain_openai import OpenAIEmbeddings
+from langgraph.store.postgres import AsyncPostgresStore
 
 from app.agent.graph import build_graph
 from app.agent.grounding import OpenAIGroundingValidator
+from app.agent.memory import MemoryExtractor
+from app.agent.memory_tool import create_search_memories_tool
 from app.agent.tools import calculator
 from app.api.main import api_router
 from app.core.config import settings
@@ -39,24 +42,12 @@ async def lifespan(app: FastAPI):
     )
     app.state.document_storage = document_storage
     reranker = CohereReranker(api_key=settings.COHERE_API_KEY)
-    app.state.graph = build_graph(
-        model=settings.OPENAI_MAIN_MODEL,
-        api_key=settings.OPENAI_API_KEY,
-        tools=[
-            create_search_documents_tool(
-                engine=engine,
-                embeddings=embeddings,
-                reranker=reranker,
-            ),
-            create_search_web_tool(
-                api_key=settings.TAVILY_API_KEY,
-                engine=engine,
-            ),
-            calculator,
-        ],
-    )
     app.state.grounding_validator = OpenAIGroundingValidator(
         model=settings.OPENAI_GROUNDING_MODEL,
+        api_key=settings.OPENAI_API_KEY,
+    )
+    app.state.memory_extractor = MemoryExtractor(
+        model=settings.OPENAI_MEMORY_EXTRACTION_MODEL,
         api_key=settings.OPENAI_API_KEY,
     )
     indexing_runner = DocumentIndexingRunner.for_database(
@@ -66,14 +57,43 @@ async def lifespan(app: FastAPI):
         embedding_model=settings.OPENAI_EMBEDDING_MODEL,
     )
     app.state.indexing_runner = indexing_runner
-    await indexing_runner.start()
-    try:
-        yield
-    finally:
-        await indexing_runner.stop()
-        reranker.close()
-        supabase_auth.auth.close()
-        supabase_storage.auth.close()
+
+    # The memory index embeds saved memories so they can be recalled by meaning.
+    async with AsyncPostgresStore.from_conn_string(
+        str(settings.DATABASE_URL),
+        index={
+            "dims": EMBEDDING_DIMENSIONS,
+            "embed": embeddings,
+            "fields": ["memory"],
+        },
+    ) as memory_index:
+        app.state.memory_index = memory_index
+        app.state.graph = build_graph(
+            model=settings.OPENAI_MAIN_MODEL,
+            api_key=settings.OPENAI_API_KEY,
+            tools=[
+                create_search_documents_tool(
+                    engine=engine,
+                    embeddings=embeddings,
+                    reranker=reranker,
+                ),
+                create_search_web_tool(
+                    api_key=settings.TAVILY_API_KEY,
+                    engine=engine,
+                ),
+                create_search_memories_tool(),
+                calculator,
+            ],
+            store=memory_index,
+        )
+        await indexing_runner.start()
+        try:
+            yield
+        finally:
+            await indexing_runner.stop()
+            reranker.close()
+            supabase_auth.auth.close()
+            supabase_storage.auth.close()
 
 
 app = FastAPI(

@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 from app.agent.answer import title_from_question
 from app.agent.execution import ChatExecution, execute_chat
 from app.agent.grounding import GroundingFailed
+from app.agent.memory import record_memories_from_turn
 from app.agent.phases import ExecutionPhase, observe_phases
 from app.api.deps import (
     CurrentUserDep,
@@ -17,6 +18,8 @@ from app.api.deps import (
     DocumentStorageDep,
     GraphDep,
     GroundingValidatorDep,
+    MemoryExtractorDep,
+    MemoryIndexDep,
     OwnedChatDep,
 )
 from app.api.streaming import (
@@ -37,6 +40,7 @@ from app.db.chat_messages import (
     set_chat_title,
 )
 from app.db.chat_messages import list_chat_messages as list_stored_messages
+from app.db.memories import IndexedMemoryWriter
 from app.models import Chat, Document
 from app.schemas.chats import (
     ChatMessageResponse,
@@ -161,6 +165,8 @@ async def _stream_turn(
     *,
     graph,
     grounding_validator,
+    memory_extractor,
+    memory_writer,
     execution: ChatExecution,
     content: str,
 ) -> AsyncIterator[str]:
@@ -219,6 +225,15 @@ async def _stream_turn(
                             title=answer.title or title_from_question(content),
                         )
                     db_session.commit()
+                # Saved before the completed event, so a memory the turn
+                # revealed is available as soon as the answer appears.
+                await record_memories_from_turn(
+                    extractor=memory_extractor,
+                    writer=memory_writer,
+                    user_id=execution.user_id,
+                    user_message=content,
+                    assistant_message=answer.markdown,
+                )
                 return MessageCompletedEvent(
                     message=ChatMessageResponse(
                         id=assistant.id,
@@ -273,6 +288,8 @@ def create_chat_message(
     chat: OwnedChatDep,
     graph: GraphDep,
     grounding_validator: GroundingValidatorDep,
+    memory_extractor: MemoryExtractorDep,
+    memory_index: MemoryIndexDep,
 ) -> StreamingResponse:
     """Answer one user message, streaming progress until the answer is stored."""
 
@@ -285,6 +302,8 @@ def create_chat_message(
         _stream_turn(
             graph=graph,
             grounding_validator=grounding_validator,
+            memory_extractor=memory_extractor,
+            memory_writer=IndexedMemoryWriter(engine, memory_index),
             execution=execution,
             content=payload.content,
         ),

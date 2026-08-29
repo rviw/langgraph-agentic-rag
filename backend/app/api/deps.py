@@ -6,11 +6,13 @@ from uuid import UUID
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.store.base import BaseStore
 from sqlmodel import Session, select
 from supabase import Client
 from supabase_auth.errors import AuthError
 
 from app.agent.grounding import GroundingValidator
+from app.agent.memory import MemoryExtractor
 from app.core.db import engine
 from app.models import Chat
 from app.rag.runner import DocumentIndexingRunner
@@ -58,6 +60,20 @@ GroundingValidatorDep = Annotated[
     GroundingValidator,
     Depends(get_grounding_validator),
 ]
+
+
+def get_memory_index(request: Request) -> BaseStore:
+    return cast(BaseStore, request.app.state.memory_index)
+
+
+MemoryIndexDep = Annotated[BaseStore, Depends(get_memory_index)]
+
+
+def get_memory_extractor(request: Request) -> MemoryExtractor:
+    return cast(MemoryExtractor, request.app.state.memory_extractor)
+
+
+MemoryExtractorDep = Annotated[MemoryExtractor, Depends(get_memory_extractor)]
 
 
 def get_document_storage(request: Request) -> DocumentStorage:

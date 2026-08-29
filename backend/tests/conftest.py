@@ -1,18 +1,23 @@
+import json
 from collections.abc import Iterator
 from typing import Any
 from uuid import UUID, uuid7
 
 import pytest
 from fastapi.testclient import TestClient
+from langchain_core.messages import AIMessage
 from sqlalchemy import text
 from sqlmodel import Session
 from supabase_auth.errors import AuthApiError
 
 from app.agent.answer import Answer
+from app.agent.phases import ExecutionPhase, report_phase
 from app.api.deps import (
     get_db,
     get_document_storage,
     get_grounding_validator,
+    get_memory_extractor,
+    get_memory_index,
     get_supabase_auth,
 )
 from app.core.db import engine
@@ -146,6 +151,104 @@ def grounding_validator() -> PassThroughGroundingValidator:
     return PassThroughGroundingValidator()
 
 
+class FakeMemoryIndex:
+    """Records vector writes and deletes without embedding anything."""
+
+    def __init__(self) -> None:
+        self.entries: dict[tuple[tuple[str, ...], str], dict] = {}
+        self.deleted: list[tuple[tuple[str, ...], str]] = []
+
+    async def aput(self, namespace, key, value, *, index=None):
+        del index
+        self.entries[(namespace, key)] = value
+
+    async def adelete(self, namespace, key):
+        self.deleted.append((namespace, key))
+        self.entries.pop((namespace, key), None)
+
+    async def asearch(self, namespace, *, query, limit):
+        del query, limit
+        return [
+            type("Item", (), {"value": value})()
+            for (entry_namespace, _key), value in self.entries.items()
+            if entry_namespace == namespace
+        ]
+
+
+@pytest.fixture
+def memory_index() -> FakeMemoryIndex:
+    return FakeMemoryIndex()
+
+
+class RecordingMemoryExtractor:
+    """Returns prepared memories instead of calling a provider."""
+
+    def __init__(self) -> None:
+        self.memories: tuple[str, ...] = ()
+        self.calls: list[tuple[str, str]] = []
+
+    async def extract(self, *, user_message: str, assistant_message: str):
+        self.calls.append((user_message, assistant_message))
+        return self.memories
+
+
+@pytest.fixture
+def memory_extractor() -> RecordingMemoryExtractor:
+    return RecordingMemoryExtractor()
+
+
+class FakeGraph:
+    """Stands in for the compiled agent by replaying a scripted final answer."""
+
+    def __init__(
+        self,
+        *,
+        answer: dict[str, Any] | None = None,
+        phases: tuple[ExecutionPhase, ...] = (),
+        failure: Exception | None = None,
+    ) -> None:
+        self._answer = answer or {
+            "markdown": "A grounded answer.",
+            "source_ids": [],
+            "title": "Generated title",
+        }
+        self._phases = phases
+        self._failure = failure
+
+    async def ainvoke(
+        self,
+        state: dict[str, Any],
+        *,
+        config: dict[str, Any] | None = None,
+        context: Any = None,
+    ) -> dict[str, Any]:
+        del config, context
+        for phase in self._phases:
+            report_phase(phase)
+        if self._failure is not None:
+            raise self._failure
+        return {
+            "messages": [
+                *state["messages"],
+                AIMessage(content=json.dumps(self._answer)),
+            ]
+        }
+
+
+@pytest.fixture
+def use_graph() -> Iterator[Any]:
+    """Serve a scripted agent for one test."""
+
+    from app.api.deps import get_graph
+
+    def factory(graph: Any) -> Any:
+        app.dependency_overrides[get_graph] = lambda: graph
+        return graph
+
+    yield factory
+    app.dependency_overrides.pop(get_graph, None)
+
+
 @pytest.fixture
 def db_session() -> Iterator[Session]:
     with Session(engine) as session:
@@ -218,6 +321,8 @@ def client(
     indexing_runner: RecordingIndexingRunner,
     monkeypatch: pytest.MonkeyPatch,
     grounding_validator: PassThroughGroundingValidator,
+    memory_index: FakeMemoryIndex,
+    memory_extractor: RecordingMemoryExtractor,
 ) -> Iterator[TestClient]:
     """A client whose Supabase Auth boundary is a double, on the real database."""
 
@@ -232,6 +337,8 @@ def client(
     app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_document_storage] = lambda: document_storage
     app.dependency_overrides[get_grounding_validator] = lambda: grounding_validator
+    app.dependency_overrides[get_memory_index] = lambda: memory_index
+    app.dependency_overrides[get_memory_extractor] = lambda: memory_extractor
     try:
         with TestClient(app) as test_client:
             yield test_client
