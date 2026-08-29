@@ -37,6 +37,8 @@ async function json(route: Route, body: unknown, status = 200) {
 export type ApiStub = {
   chats: StubChat[];
   messages: StubMessage[];
+  memories: { id: string; content: string; created_at: string }[];
+  memoryStatus?: { status: number; detail: string };
   /** Frames returned for the next sent message. */
   stream: string;
   /** Status returned instead of the stream, when set. */
@@ -70,6 +72,8 @@ export async function stubApi(page: Page, initial: Partial<ApiStub> = {}) {
   const stub: ApiStub = {
     chats: initial.chats ?? [],
     messages: initial.messages ?? [],
+    memories: initial.memories ?? [],
+    memoryStatus: initial.memoryStatus,
     stream: initial.stream ?? "",
     streamStatus: initial.streamStatus,
     listStatus: initial.listStatus,
@@ -83,6 +87,34 @@ export async function stubApi(page: Page, initial: Partial<ApiStub> = {}) {
   await page.route("**/supabase/storage/v1/**", async (route) => {
     stub.requests.push(`${route.request().method()} storage`);
     await json(route, { Key: "documents/uploaded" });
+  });
+
+  await page.route("**/api/memories**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const memoryId = url.pathname.replace("/api/memories", "").replace("/", "");
+    stub.requests.push(`${request.method()} /memories/${memoryId}`);
+
+    if (request.method() === "GET") {
+      if (stub.memoryStatus) {
+        await json(
+          route,
+          { detail: stub.memoryStatus.detail },
+          stub.memoryStatus.status,
+        );
+        return;
+      }
+      await json(route, stub.memories);
+      return;
+    }
+    if (request.method() === "DELETE") {
+      stub.memories = memoryId
+        ? stub.memories.filter((item) => item.id !== memoryId)
+        : [];
+      await route.fulfill({ status: 204, body: "" });
+      return;
+    }
+    await json(route, {}, 404);
   });
 
   await page.route("**/api/chats**", async (route) => {

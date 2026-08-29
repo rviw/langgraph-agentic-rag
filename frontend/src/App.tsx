@@ -7,6 +7,7 @@ import { ChatLayout } from "@/components/chat/ChatLayout";
 import { LoginPage } from "@/pages/auth/LoginPage";
 import { ChatIndexPage } from "@/pages/chat/ChatIndexPage";
 import { ChatPage } from "@/pages/chat/ChatPage";
+import { MemoryPage } from "@/pages/memory/MemoryPage";
 import { NotFoundPage } from "@/pages/NotFoundPage";
 import { RouteErrorPage } from "@/pages/RouteErrorPage";
 
@@ -23,6 +24,7 @@ const router = createBrowserRouter([
       {
         Component: RequireAuth,
         children: [
+          { path: "memories", Component: MemoryPage },
           {
             path: "chats",
             Component: ChatLayout,

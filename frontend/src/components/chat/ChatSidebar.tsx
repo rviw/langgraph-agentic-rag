@@ -1,6 +1,7 @@
 import {
   CircleUserRoundIcon,
   LogOutIcon,
+  OrbitIcon,
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -95,6 +96,27 @@ export function ChatSidebar({
           <ThemeToggle />
         </div>
       </header>
+
+      <nav aria-label="Account" className="border-b p-3">
+        <NavLink
+          to="/memories"
+          className={({ isActive }) =>
+            cn(
+              "flex items-center gap-2 rounded-md px-3 py-2 text-sm",
+              isActive
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-sidebar-foreground hover:bg-sidebar-accent/60",
+            )
+          }
+        >
+          <OrbitIcon
+            aria-hidden="true"
+            className="size-4 shrink-0"
+            strokeWidth={1.75}
+          />
+          Memories
+        </NavLink>
+      </nav>
 
       <nav
         aria-label="Chats"

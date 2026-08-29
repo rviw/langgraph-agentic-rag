@@ -1,6 +1,7 @@
 const API_BASE_URL = "/api";
 
 const CHATS_URL = `${API_BASE_URL}/chats`;
+const MEMORIES_URL = `${API_BASE_URL}/memories`;
 
 export type ChatResponse = {
   id: string;
@@ -71,6 +72,12 @@ export type DocumentResponse = {
 export type DocumentUploadResponse = {
   document: DocumentResponse;
   upload: { bucket: string; path: string; token: string };
+};
+
+export type MemoryResponse = {
+  id: string;
+  content: string;
+  created_at: string;
 };
 
 export type ExecutionPhase =
@@ -157,6 +164,31 @@ export async function listChats(
   signal?: AbortSignal,
 ): Promise<ChatResponse[]> {
   return parsed(await request(CHATS_URL, authorized(accessToken, { signal })));
+}
+
+export async function listMemories(
+  accessToken: string,
+  signal?: AbortSignal,
+): Promise<MemoryResponse[]> {
+  return parsed(await request(MEMORIES_URL, authorized(accessToken, { signal })));
+}
+
+export async function deleteMemory(
+  accessToken: string,
+  memoryId: string,
+): Promise<void> {
+  await expectNoContent(
+    await request(
+      `${MEMORIES_URL}/${encodeURIComponent(memoryId)}`,
+      authorized(accessToken, { method: "DELETE" }),
+    ),
+  );
+}
+
+export async function deleteAllMemories(accessToken: string): Promise<void> {
+  await expectNoContent(
+    await request(MEMORIES_URL, authorized(accessToken, { method: "DELETE" })),
+  );
 }
 
 export async function getChat(
