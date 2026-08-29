@@ -1,9 +1,16 @@
 import json
+import os
 from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 from uuid import UUID, uuid7
 
 import pytest
+
+# Set before the application is imported below: the trace exporter starts
+# background workers as soon as it is built, and tests export nothing.
+os.environ.setdefault("LANGFUSE_TRACING_ENABLED", "false")
+
 from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 from sqlalchemy import text
@@ -19,6 +26,7 @@ from app.api.deps import (
     get_memory_extractor,
     get_memory_index,
     get_supabase_auth,
+    get_tracer,
 )
 from app.core.db import engine
 from app.db.answer_sources import AnswerSourceSnapshot
@@ -197,6 +205,26 @@ def memory_extractor() -> RecordingMemoryExtractor:
     return RecordingMemoryExtractor()
 
 
+class RecordingTracer:
+    """Records traced executions without exporting anything."""
+
+    def __init__(self) -> None:
+        self.executions: list[tuple[UUID, UUID, UUID]] = []
+
+    @contextmanager
+    def trace_execution(self, *, execution_id, chat_id, user_id):
+        self.executions.append((execution_id, chat_id, user_id))
+        yield
+
+    async def shutdown(self) -> None:
+        pass
+
+
+@pytest.fixture
+def tracer() -> RecordingTracer:
+    return RecordingTracer()
+
+
 class FakeGraph:
     """Stands in for the compiled agent by replaying a scripted final answer."""
 
@@ -323,6 +351,7 @@ def client(
     grounding_validator: PassThroughGroundingValidator,
     memory_index: FakeMemoryIndex,
     memory_extractor: RecordingMemoryExtractor,
+    tracer: RecordingTracer,
 ) -> Iterator[TestClient]:
     """A client whose Supabase Auth boundary is a double, on the real database."""
 
@@ -339,6 +368,7 @@ def client(
     app.dependency_overrides[get_grounding_validator] = lambda: grounding_validator
     app.dependency_overrides[get_memory_index] = lambda: memory_index
     app.dependency_overrides[get_memory_extractor] = lambda: memory_extractor
+    app.dependency_overrides[get_tracer] = lambda: tracer
     try:
         with TestClient(app) as test_client:
             yield test_client

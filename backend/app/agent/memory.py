@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, SecretStr, StringConstraints
 
 from app.db.memories import MemoryWriter
 from app.models.memory import MEMORY_CONTENT_MAX_LENGTH
+from app.observability.tracing import traced_config
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,11 @@ class MemoryExtractor:
             [
                 SystemMessage(content=_EXTRACTION_PROMPT),
                 HumanMessage(content=f"## Chat turn\n\n{transcript}"),
-            ]
+            ],
+            config=traced_config(
+                run_name="memory-extraction",
+                metadata={"model_role": "memory_extraction"},
+            ),
         )
         return tuple(result.memories)
 

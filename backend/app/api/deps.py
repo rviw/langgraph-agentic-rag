@@ -15,6 +15,7 @@ from app.agent.grounding import GroundingValidator
 from app.agent.memory import MemoryExtractor
 from app.core.db import engine
 from app.models import Chat
+from app.observability.tracing import ChatExecutionTracer
 from app.rag.runner import DocumentIndexingRunner
 from app.storage.documents import DocumentStorage
 
@@ -74,6 +75,13 @@ def get_memory_extractor(request: Request) -> MemoryExtractor:
 
 
 MemoryExtractorDep = Annotated[MemoryExtractor, Depends(get_memory_extractor)]
+
+
+def get_tracer(request: Request) -> ChatExecutionTracer:
+    return cast(ChatExecutionTracer, request.app.state.tracer)
+
+
+TracerDep = Annotated[ChatExecutionTracer, Depends(get_tracer)]
 
 
 def get_document_storage(request: Request) -> DocumentStorage:

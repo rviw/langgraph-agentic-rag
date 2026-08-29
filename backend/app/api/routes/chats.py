@@ -21,6 +21,7 @@ from app.api.deps import (
     MemoryExtractorDep,
     MemoryIndexDep,
     OwnedChatDep,
+    TracerDep,
 )
 from app.api.streaming import (
     HEARTBEAT_FRAME,
@@ -282,6 +283,23 @@ async def _stream_turn(
             answer_task.cancel()
 
 
+async def _traced_turn(
+    *,
+    tracer,
+    execution: ChatExecution,
+    **turn: object,
+) -> AsyncIterator[str]:
+    """Stream one turn inside a single trace covering its model and tool calls."""
+
+    with tracer.trace_execution(
+        execution_id=execution.execution_id,
+        chat_id=execution.chat_id,
+        user_id=execution.user_id,
+    ):
+        async for frame in _stream_turn(execution=execution, **turn):
+            yield frame
+
+
 @router.post("/{chat_id}/messages", response_class=StreamingResponse)
 def create_chat_message(
     payload: CreateChatMessageRequest,
@@ -290,6 +308,7 @@ def create_chat_message(
     grounding_validator: GroundingValidatorDep,
     memory_extractor: MemoryExtractorDep,
     memory_index: MemoryIndexDep,
+    tracer: TracerDep,
 ) -> StreamingResponse:
     """Answer one user message, streaming progress until the answer is stored."""
 
@@ -299,7 +318,8 @@ def create_chat_message(
         user_id=chat.user_id,
     )
     return StreamingResponse(
-        _stream_turn(
+        _traced_turn(
+            tracer=tracer,
             graph=graph,
             grounding_validator=grounding_validator,
             memory_extractor=memory_extractor,

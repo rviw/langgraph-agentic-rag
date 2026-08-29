@@ -11,6 +11,7 @@ from pydantic import SecretStr
 from app.agent.answer import AnswerPayload
 from app.agent.context import AgentContext
 from app.agent.phases import report_phase
+from app.observability.tracing import traced_config
 
 SYSTEM_PROMPT = """
 You are a grounded assistant.
@@ -109,6 +110,10 @@ def build_graph(
                 SystemMessage(content=f"{SYSTEM_PROMPT}\n\n{title_instruction}"),
                 *state["messages"],
             ],
+            config=traced_config(
+                run_name="answer-model",
+                metadata={"model_role": "answer"},
+            ),
         )
         return {"messages": [response["raw"]]}
 

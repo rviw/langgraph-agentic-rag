@@ -17,6 +17,7 @@ from app.core.supabase import (
     create_supabase_storage_client,
 )
 from app.models.document import EMBEDDING_DIMENSIONS
+from app.observability.tracing import build_chat_execution_tracer
 from app.rag.reranking import CohereReranker
 from app.rag.retrieval import create_search_documents_tool
 from app.rag.runner import DocumentIndexingRunner
@@ -28,6 +29,8 @@ from app.storage.documents import DocumentStorage
 async def lifespan(app: FastAPI):
     supabase_auth = create_supabase_auth_client()
     supabase_storage = create_supabase_storage_client()
+    tracer = build_chat_execution_tracer(settings)
+    app.state.tracer = tracer
     embeddings = OpenAIEmbeddings(
         model=settings.OPENAI_EMBEDDING_MODEL,
         dimensions=EMBEDDING_DIMENSIONS,
@@ -91,6 +94,7 @@ async def lifespan(app: FastAPI):
             yield
         finally:
             await indexing_runner.stop()
+            await tracer.shutdown()
             reranker.close()
             supabase_auth.auth.close()
             supabase_storage.auth.close()

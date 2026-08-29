@@ -49,7 +49,13 @@ async def execute_chat(
         # Start from the original conversation, never a failed run's messages.
         result = await graph.ainvoke(
             {"messages": list(messages)},
-            config={"recursion_limit": GRAPH_RECURSION_LIMIT},
+            config={
+                "recursion_limit": GRAPH_RECURSION_LIMIT,
+                "metadata": {
+                    "app.execution.id": str(context.execution_id),
+                    "grounding.attempt": attempt + 1,
+                },
+            },
             context=context,
         )
         produced = result["messages"]
