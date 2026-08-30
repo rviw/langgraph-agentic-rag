@@ -1,0 +1,15 @@
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+.git
+.env
+.env.*
+!.env.example
+/backend/app/frontend
+/frontend/playwright-report
+/frontend/test-results
+/supabase/.branches
+/supabase/.temp
+/supabase/signing_keys.json

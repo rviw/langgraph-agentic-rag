@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from langchain_openai import OpenAIEmbeddings
@@ -23,6 +24,9 @@ from app.rag.retrieval import create_search_documents_tool
 from app.rag.runner import DocumentIndexingRunner
 from app.rag.web import create_search_web_tool
 from app.storage.documents import DocumentStorage
+
+# The production image ships the built bundle beside the application.
+FRONTEND_DIR = Path(__file__).parent / "frontend"
 
 
 @asynccontextmanager
@@ -112,3 +116,6 @@ app = FastAPI(
 )
 
 app.include_router(api_router, prefix=settings.API_PREFIX)
+
+if FRONTEND_DIR.is_dir():
+    app.frontend("/", directory=FRONTEND_DIR)

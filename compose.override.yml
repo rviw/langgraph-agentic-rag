@@ -1,0 +1,12 @@
+services:
+  backend:
+    build:
+      target: development
+
+    environment:
+      FASTAPI_ENV: development
+
+    volumes:
+      - ./backend:/app/backend
+
+    restart: "no"
