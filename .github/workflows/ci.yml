@@ -1,0 +1,150 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      FASTAPI_ENV: development
+      SUPABASE_URL: http://127.0.0.1:54321
+      OPENAI_API_KEY: ci-openai-key
+      COHERE_API_KEY: ci-cohere-key
+      TAVILY_API_KEY: ci-tavily-key
+      LANGFUSE_PUBLIC_KEY: ci-langfuse-public-key
+      LANGFUSE_SECRET_KEY: ci-langfuse-secret-key
+      LANGFUSE_BASE_URL: https://jp.cloud.langfuse.com
+      LANGFUSE_TRACING_ENABLED: "false"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.11.6"
+          python-version: "3.14"
+
+      - name: Install Python dependencies
+        working-directory: .
+        run: uv sync --frozen --package app
+
+      - name: Lint
+        run: uv run --frozen ruff check .
+
+      - name: Check formatting
+        run: uv run --frozen ruff format --check .
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Install JavaScript dependencies
+        working-directory: .
+        run: bun install --frozen-lockfile
+
+      - name: Start local Supabase
+        working-directory: .
+        run: bash scripts/start-supabase.sh >/dev/null
+
+      - name: Configure test database and Supabase
+        working-directory: .
+        run: |
+          bunx supabase status -o env \
+            --override-name db.url=DATABASE_URL \
+            --override-name auth.publishable_key=SUPABASE_PUBLISHABLE_KEY \
+            --override-name auth.secret_key=SUPABASE_SECRET_KEY \
+            | grep -E '^(DATABASE_URL|SUPABASE_PUBLISHABLE_KEY|SUPABASE_SECRET_KEY)=' \
+            | sed -E 's/^([^=]+)="(.*)"$/\1=\2/' \
+            >> "$GITHUB_ENV"
+
+      - name: Apply application schema
+        run: |
+          uv run --frozen alembic upgrade head
+          uv run --frozen python -m app.db_bootstrap
+
+      - name: Test
+        run: uv run --frozen pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      VITE_SUPABASE_URL: http://127.0.0.1:5173/supabase
+      VITE_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-key
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2.0.2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Install JavaScript dependencies
+        working-directory: .
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Type check
+        run: bun run typecheck
+
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Test
+        run: bun run test
+
+      - name: Build
+        run: bun run build
+
+      - name: Upload browser test artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-failure
+          path: |
+            frontend/playwright-report/
+            frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Build the production image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          file: backend/Dockerfile
+          target: production
+          build-args: |
+            VITE_SUPABASE_URL=http://127.0.0.1:54321
+            VITE_SUPABASE_PUBLISHABLE_KEY=ci-placeholder-key
