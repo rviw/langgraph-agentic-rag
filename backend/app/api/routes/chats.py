@@ -29,6 +29,7 @@ from app.api.streaming import (
     SSE_HEADERS,
     event_frame,
 )
+from app.core.chat_limiter import DailyChatLimiter
 from app.core.db import engine
 from app.db.answer_sources import (
     publish_citations,
@@ -64,6 +65,7 @@ logger = logging.getLogger(__name__)
 
 _GENERIC_FAILURE = "Couldn’t generate a response."
 _UNGROUNDED_FAILURE = "Sources don’t support an answer. Try another question."
+_chat_limiter = DailyChatLimiter(limit=3, timezone="Asia/Seoul")
 
 
 @router.post("", response_model=ChatResponse, status_code=status.HTTP_201_CREATED)
@@ -311,6 +313,12 @@ def create_chat_message(
     tracer: TracerDep,
 ) -> StreamingResponse:
     """Answer one user message, streaming progress until the answer is stored."""
+
+    if not _chat_limiter.consume(chat.user_id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Daily chat limit reached. Try again tomorrow.",
+        )
 
     execution = ChatExecution(
         execution_id=uuid7(),
